@@ -1,8 +1,10 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
 import { createPublicClient, http, parseUnits, formatUnits } from 'viem';
 import { base } from 'viem/chains';
 import Anthropic from '@anthropic-ai/sdk';
+import path from 'path';
 
 // Environment
 const PORT = parseInt(process.env.PORT || '3002');
@@ -61,6 +63,12 @@ app.register(cors, {
   origin: true,
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Payment-Tx']
+});
+
+// Serve static dashboard
+app.register(fastifyStatic, {
+  root: path.join(process.cwd(), 'public'),
+  prefix: '/'
 });
 
 // Verify USDC payment on Base
