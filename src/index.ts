@@ -1,10 +1,8 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import fastifyStatic from '@fastify/static';
-import { createPublicClient, http, parseUnits, formatUnits } from 'viem';
+import { createPublicClient, http, formatUnits } from 'viem';
 import { base } from 'viem/chains';
 import Anthropic from '@anthropic-ai/sdk';
-import path from 'path';
 
 // Environment
 const PORT = parseInt(process.env.PORT || '3002');
@@ -65,10 +63,97 @@ app.register(cors, {
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Payment-Tx']
 });
 
-// Serve static dashboard
-app.register(fastifyStatic, {
-  root: path.join(process.cwd(), 'public'),
-  prefix: '/'
+// Dashboard HTML (inline)
+const dashboardHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AsterPay API Marketplace - Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%); }
+    .card { background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); }
+    .glow { box-shadow: 0 0 30px rgba(139, 92, 246, 0.3); }
+  </style>
+</head>
+<body class="min-h-screen text-white p-8">
+  <div class="max-w-6xl mx-auto">
+    <div class="text-center mb-12">
+      <h1 class="text-4xl font-bold mb-2">AsterPay API Marketplace</h1>
+      <p class="text-gray-400">x402 Micropayments Dashboard</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+      <div class="card rounded-xl p-6 border border-purple-500/30 glow">
+        <p class="text-gray-400 text-sm mb-1">Total API Calls</p>
+        <p id="totalCalls" class="text-3xl font-bold text-purple-400">-</p>
+      </div>
+      <div class="card rounded-xl p-6 border border-green-500/30">
+        <p class="text-gray-400 text-sm mb-1">Paid Calls</p>
+        <p id="paidCalls" class="text-3xl font-bold text-green-400">-</p>
+      </div>
+      <div class="card rounded-xl p-6 border border-blue-500/30">
+        <p class="text-gray-400 text-sm mb-1">Volume (USDC)</p>
+        <p id="volume" class="text-3xl font-bold text-blue-400">$-</p>
+      </div>
+      <div class="card rounded-xl p-6 border border-yellow-500/30">
+        <p class="text-gray-400 text-sm mb-1">Unique Users</p>
+        <p id="users" class="text-3xl font-bold text-yellow-400">-</p>
+      </div>
+    </div>
+    <div class="card rounded-xl p-8 border border-gray-700 mb-12">
+      <h2 class="text-2xl font-bold mb-6">Available APIs</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="apis"></div>
+    </div>
+    <div class="card rounded-xl p-8 border border-gray-700 mb-12">
+      <h2 class="text-2xl font-bold mb-6">How x402 Works</h2>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
+        <div class="p-4"><div class="text-4xl mb-2">1</div><p class="font-semibold">Call API</p><p class="text-gray-400 text-sm">POST to any endpoint</p></div>
+        <div class="p-4"><div class="text-4xl mb-2">2</div><p class="font-semibold">Get 402</p><p class="text-gray-400 text-sm">Receive payment details</p></div>
+        <div class="p-4"><div class="text-4xl mb-2">3</div><p class="font-semibold">Pay USDC</p><p class="text-gray-400 text-sm">On Base network</p></div>
+        <div class="p-4"><div class="text-4xl mb-2">4</div><p class="font-semibold">Get Response</p><p class="text-gray-400 text-sm">Retry with tx hash</p></div>
+      </div>
+    </div>
+    <div class="card rounded-xl p-8 border border-gray-700 mb-12">
+      <h2 class="text-2xl font-bold mb-4">Payment Details</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div><p class="text-gray-400 text-sm">Payment Address</p><p id="paymentAddress" class="font-mono text-sm bg-black/30 p-3 rounded mt-1 break-all">-</p></div>
+        <div><p class="text-gray-400 text-sm">Network</p><p class="font-semibold mt-1">Base (Chain ID: 8453)</p><p class="text-gray-400 text-sm mt-2">Currency</p><p class="font-semibold mt-1">USDC</p></div>
+      </div>
+    </div>
+    <div class="text-center mt-12 text-gray-500 text-sm">
+      <p>Powered by <a href="https://asterpay.io" class="text-purple-400 hover:underline">AsterPay</a> | x402 Protocol on Base</p>
+    </div>
+  </div>
+  <script>
+    async function fetchStats() {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        document.getElementById('totalCalls').textContent = data.totalCalls || 0;
+        document.getElementById('paidCalls').textContent = data.paidCalls || 0;
+        document.getElementById('volume').textContent = '$' + (data.totalVolumeUSDC || '0.00');
+        document.getElementById('users').textContent = data.uniqueUsers || 0;
+      } catch (e) { console.error('Stats error:', e); }
+    }
+    async function fetchPricing() {
+      try {
+        const res = await fetch('/api/pricing');
+        const data = await res.json();
+        document.getElementById('paymentAddress').textContent = data.paymentAddress;
+        document.getElementById('apis').innerHTML = data.apis.map(api => 
+          '<div class="bg-black/30 rounded-lg p-4"><div class="flex justify-between items-start mb-2"><code class="text-purple-400">' + api.endpoint + '</code><span class="bg-green-500/20 text-green-400 px-2 py-1 rounded text-sm">$' + api.price + '</span></div><p class="text-gray-400 text-sm">' + api.description + '</p></div>'
+        ).join('');
+      } catch (e) { console.error('Pricing error:', e); }
+    }
+    fetchStats(); fetchPricing(); setInterval(fetchStats, 10000);
+  </script>
+</body>
+</html>`;
+
+// Serve dashboard at root
+app.get('/', async (request, reply) => {
+  reply.type('text/html').send(dashboardHtml);
 });
 
 // Verify USDC payment on Base
